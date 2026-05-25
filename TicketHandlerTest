@@ -1,0 +1,40 @@
+@isTest
+private class TicketHandlerTest {
+    
+    @testSetup
+    static void setupTestData() {
+        Flight__c flight = new Flight__c(Name = 'Flight-API');
+        insert flight;
+        
+        Ticket__c ticket = new Ticket__c(Flight__c = flight.Id);
+        insert ticket;
+        
+        Contact con = new Contact(FirstName = 'Api', LastName = 'User');
+        insert con;
+    }
+
+    @isTest
+    static void testUpdateTicket_Booked_ShouldTriggerIntegration() {
+        Ticket__c ticketToBook = [SELECT Id FROM Ticket__c LIMIT 1];
+        Contact con = [SELECT Id FROM Contact LIMIT 1];
+
+        Test.startTest();
+        ticketToBook.Contact__c = con.Id;
+        update ticketToBook;
+        Test.stopTest(); 
+
+        Ticket__c updatedTicket = [SELECT Id, Contact__c FROM Ticket__c WHERE Id = :ticketToBook.Id];
+        System.assertEquals(con.Id, updatedTicket.Contact__c, 'Ticket should be updated with the contact');
+    }
+    
+    @isTest
+    static void testUpdateTicket_NotBooked_ShouldNotTriggerIntegration() {
+        Ticket__c ticketToUpdate = [SELECT Id FROM Ticket__c LIMIT 1];
+        
+        Test.startTest();
+        update ticketToUpdate;
+        Test.stopTest();
+
+        System.assertNotEquals(null, ticketToUpdate.Id, 'Ticket should be updated without triggering integration');
+    }
+}

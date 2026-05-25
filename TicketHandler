@@ -1,0 +1,24 @@
+public with sharing class TicketHandler {
+     
+    public static void onAfterUpdate(List<Ticket__c> newTickets, Map<Id, Ticket__c> oldMap){
+        Set<Id> bookedTicketIds = filterBookedTickets(newTickets, oldMap);
+
+        if (!bookedTicketIds.isEmpty()){
+            TicketIntegrationService.sendTicketsToExternalApi(bookedTicketIds);
+        }
+    }
+
+    private static Set<Id> filterBookedTickets(List<Ticket__c> newTickets, Map<Id, Ticket__c> oldMap){
+        Set<Id> bookedIds = new Set<Id>();
+
+        for (Ticket__c ticket : newTickets){
+            Ticket__c oldTicket = oldMap.get(ticket.Id);
+
+            if (ticket.Contact__c != null && oldTicket.Contact__c == null){
+                bookedIds.add(ticket.Id);
+            }
+        }
+        
+        return bookedIds;
+    }
+}

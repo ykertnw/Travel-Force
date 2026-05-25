@@ -1,0 +1,7 @@
+trigger TicketTrigger on Ticket__c (after update) {
+    if (Trigger.isAfter){
+        if (Trigger.isUpdate){
+            TicketHandler.onAfterUpdate(Trigger.new, Trigger.oldMap);
+        }
+    }
+}

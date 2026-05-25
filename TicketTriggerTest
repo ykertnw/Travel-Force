@@ -1,0 +1,28 @@
+@isTest
+private class TicketTriggerTest {
+
+    @isTest
+    static void testTicketTriggerUpdate() {
+        Flight__c flight = new Flight__c(Name = 'Bulk-Flight');
+        insert flight;
+        
+        List<Ticket__c> tickets = new List<Ticket__c>();
+        for(Integer i = 0; i < 10; i++) {
+            tickets.add(new Ticket__c(Flight__c = flight.Id));
+        }
+        insert tickets;
+        
+        Contact con = new Contact(LastName = 'TestContact');
+        insert con;
+
+        Test.startTest();
+        for(Ticket__c t : tickets) {
+            t.Contact__c = con.Id; 
+        }
+        update tickets;
+        Test.stopTest();
+
+        List<Ticket__c> updatedTickets = [SELECT Id FROM Ticket__c WHERE Contact__c = :con.Id];
+        System.assertEquals(10, updatedTickets.size(), 'All 10 tickets should successfully pass through the trigger');
+    }
+}

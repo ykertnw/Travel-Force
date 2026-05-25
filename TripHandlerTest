@@ -1,0 +1,121 @@
+@isTest
+private class TripHandlerTest {
+    
+    @testSetup
+    static void setupTestData() {
+        Contact testContact = new Contact(FirstName = 'Ivan', LastName = 'Ivanov');
+        insert testContact;
+        
+        Flight__c flight1 = new Flight__c(Name = 'Flight-001');
+        Flight__c flight2 = new Flight__c(Name = 'Flight-002');
+        insert new List<Flight__c>{flight1, flight2};
+            
+        Ticket__c t1 = new Ticket__c(Flight__c = flight1.Id);
+        Ticket__c t2 = new Ticket__c(Flight__c = flight1.Id);
+        Ticket__c t3 = new Ticket__c(Flight__c = flight2.Id);
+        
+        insert new List<Ticket__c>{t1, t2, t3};
+    }
+
+    @isTest
+    static void testInsertTrip_WithFlight_ShouldBookTicket() {
+        Contact con = [SELECT Id FROM Contact LIMIT 1];
+        Flight__c flight1 = [SELECT Id FROM Flight__c WHERE Name = 'Flight-001' LIMIT 1];
+        
+        Trip__c newTrip = new Trip__c(
+            Contact__c = con.Id,
+            Flight__c = flight1.Id,
+            PrefferedTripStart__c = Date.today()
+        );
+
+        Test.startTest();
+        insert newTrip;
+        Test.stopTest();
+
+        Trip__c insertedTrip = [SELECT Id, Name, Status__c FROM Trip__c WHERE Id = :newTrip.Id];
+        System.assertEquals('Flight booked', insertedTrip.Status__c, 'Status should be "Flight booked"');
+        System.assert(insertedTrip.Name.contains('Ivanov'), 'Trip name should contain contact name');
+
+        List<Ticket__c> bookedTickets = [SELECT Id, Contact__c, Trip__c FROM Ticket__c WHERE Trip__c = :newTrip.Id];
+        System.assertEquals(1, bookedTickets.size(), 'Exactly 1 ticket should be booked');
+        System.assertEquals(con.Id, bookedTickets[0].Contact__c, 'Ticket should be associated with the contact');
+    }
+
+    @isTest
+    static void testInsertTrip_WithoutFlight_ShouldSetSearchStatus() {
+        Contact con = [SELECT Id FROM Contact LIMIT 1];
+        
+        Trip__c newTrip = new Trip__c(
+            Contact__c = con.Id,
+            PrefferedTripStart__c = Date.today() 
+        );
+
+        Test.startTest();
+        insert newTrip;
+        Test.stopTest();
+
+        Trip__c insertedTrip = [SELECT Id, Status__c FROM Trip__c WHERE Id = :newTrip.Id];
+        System.assertEquals('Flight search', insertedTrip.Status__c, 'Status should be "Flight search"');
+    }
+
+    @isTest
+    static void testUpdateTrip_ChangeFlight_ShouldRebookTicket() {
+        Contact con = [SELECT Id FROM Contact LIMIT 1];
+        Flight__c flight1 = [SELECT Id FROM Flight__c WHERE Name = 'Flight-001' LIMIT 1];
+        Flight__c flight2 = [SELECT Id FROM Flight__c WHERE Name = 'Flight-002' LIMIT 1];
+        
+        Trip__c trip = new Trip__c(Contact__c = con.Id, Flight__c = flight1.Id, PrefferedTripStart__c = Date.today());
+        insert trip;
+
+        Test.startTest();
+        trip.Flight__c = flight2.Id; 
+        update trip;
+        Test.stopTest();
+
+        List<Ticket__c> oldTickets = [SELECT Id FROM Ticket__c WHERE Flight__c = :flight1.Id AND Trip__c = :trip.Id];
+        System.assertEquals(0, oldTickets.size(), 'Old ticket should be released (Trip__c = null)');
+
+        List<Ticket__c> newTickets = [SELECT Id FROM Ticket__c WHERE Flight__c = :flight2.Id AND Trip__c = :trip.Id];
+        System.assertEquals(1, newTickets.size(), 'New ticket should be booked');
+    }
+
+    @isTest
+    static void testInsertTrip_NoAvailableTickets_ShouldThrowError() {
+        Contact con = [SELECT Id FROM Contact LIMIT 1];
+        Flight__c flight2 = [SELECT Id FROM Flight__c WHERE Name = 'Flight-002' LIMIT 1];
+        
+        Trip__c trip1 = new Trip__c(Contact__c = con.Id, Flight__c = flight2.Id, PrefferedTripStart__c = Date.today());
+        insert trip1; 
+
+        Trip__c trip2 = new Trip__c(Contact__c = con.Id, Flight__c = flight2.Id, PrefferedTripStart__c = Date.today());
+
+        Test.startTest();
+        try {
+            insert trip2;
+            System.assert(false, 'Expected error for no available tickets');
+        } catch (DmlException e) {
+            System.assert(e.getMessage().contains('No available tickets'), 'Error message should contain the expected text');
+        }
+        Test.stopTest();
+    }
+
+    @isTest
+    static void testDeleteTrip_ShouldReleaseTicket() {
+        Contact con = [SELECT Id FROM Contact LIMIT 1];
+        Flight__c flight1 = [SELECT Id FROM Flight__c WHERE Name = 'Flight-001' LIMIT 1];
+        
+        Trip__c trip = new Trip__c(Contact__c = con.Id, Flight__c = flight1.Id, PrefferedTripStart__c = Date.today());
+        insert trip; 
+
+        Ticket__c bookedTicket = [SELECT Id, Trip__c FROM Ticket__c WHERE Trip__c = :trip.Id LIMIT 1];
+        System.assertNotEquals(null, bookedTicket.Trip__c, 'Ticket should be associated with the trip before deletion');
+
+        Test.startTest();
+        delete trip;
+        Test.stopTest();
+
+        Ticket__c releasedTicket = [SELECT Id, Contact__c, Trip__c FROM Ticket__c WHERE Id = :bookedTicket.Id];
+        System.assertEquals(null, releasedTicket.Contact__c, 'Contact__c in the ticket should be cleared');
+        System.assertEquals(null, releasedTicket.Trip__c, 'Trip__c in the ticket should be cleared');
+    }
+}

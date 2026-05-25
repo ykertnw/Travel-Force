@@ -1,0 +1,191 @@
+public with sharing class TripHandler {
+
+    public static void onBeforeInsert(List<Trip__c> newTrips) {
+        populateNameAndStatus(newTrips);
+    }
+
+    public static void onBeforeUpdate(List<Trip__c> newTrips, Map<Id, Trip__c> oldMap) {
+        populateNameAndStatus(newTrips);
+    }
+
+    public static void onBeforeDelete(List<Trip__c> oldTrips) {
+        handleTripDeletion(oldTrips);
+    }
+
+    public static void onAfterInsert(List<Trip__c> newTrips) {
+        handleFlightTransitions(newTrips, null);
+    }
+
+    public static void onAfterUpdate(List<Trip__c> newTrips, Map<Id, Trip__c> oldMap) {
+        handleFlightTransitions(newTrips, oldMap);
+    }
+
+    private static void handleTripDeletion(List<Trip__c> oldTrips) {
+        Set<Id> tripIds = new Set<Id>();
+        for (Trip__c t : oldTrips) {
+            tripIds.add(t.Id);
+        }
+
+        List<Ticket__c> ticketsToRelease = [SELECT Id, Contact__c, Trip__c 
+                                            FROM Ticket__c 
+                                            WHERE Trip__c IN :tripIds];
+
+        if (!ticketsToRelease.isEmpty()) {
+            for (Ticket__c ticket : ticketsToRelease) {
+                ticket.Contact__c = null; 
+                ticket.Trip__c = null;    
+            }
+            
+            update ticketsToRelease;
+        }
+    }
+
+    private static void populateNameAndStatus(List<Trip__c> trips) {
+        Map<Id, Contact> contactsMap = getRelatedContacts(trips);
+
+        for (Trip__c trip : trips) {
+            setTripStatus(trip);
+            setTripName(trip, contactsMap);
+        }
+    }
+
+    private static Map<Id, Contact> getRelatedContacts(List<Trip__c> trips) {
+        Set<Id> contactIds = new Set<Id>();
+        for (Trip__c trip : trips) {
+            if (trip.Contact__c != null) {
+                contactIds.add(trip.Contact__c);
+            }
+        }
+        if (contactIds.isEmpty()) {
+            return new Map<Id, Contact>();
+        }
+        return new Map<Id, Contact>([SELECT Id, Name FROM Contact WHERE Id IN :contactIds]);
+    }
+
+    private static void setTripStatus(Trip__c trip) {
+        trip.Status__c = (trip.Flight__c != null) ? 'Flight booked' : 'Flight search';
+    }
+
+    private static void setTripName(Trip__c trip, Map<Id, Contact> contactsMap) {
+        if (trip.Contact__c != null && trip.PrefferedTripStart__c != null) {
+            String contactName = contactsMap.containsKey(trip.Contact__c)
+                ? contactsMap.get(trip.Contact__c).Name
+                : 'Unknown';
+            trip.Name = contactName + ' - ' + String.valueOf(trip.PrefferedTripStart__c);
+        }
+    }
+
+    private static void handleFlightTransitions(List<Trip__c> newTrips, Map<Id, Trip__c> oldMap) {
+        List<Trip__c> tripsToUnbook = new List<Trip__c>();
+        List<Trip__c> tripsToBook = new List<Trip__c>();    
+
+        for (Trip__c newTrip : newTrips) {
+            Trip__c oldTrip = (oldMap != null) ? oldMap.get(newTrip.Id) : null;
+
+            if (oldTrip == null) {
+                if (newTrip.Flight__c != null && newTrip.Contact__c != null) {
+                    tripsToBook.add(newTrip);
+                }
+            } else {
+                if (newTrip.Flight__c != oldTrip.Flight__c) {
+                    if (oldTrip.Flight__c != null) {
+                        tripsToUnbook.add(oldTrip);
+                    }
+                    if (newTrip.Flight__c != null && newTrip.Contact__c != null) {
+                        tripsToBook.add(newTrip);
+                    }
+                } else if (newTrip.Flight__c != null && newTrip.Contact__c != null && oldTrip.Contact__c == null) {
+                    tripsToBook.add(newTrip);
+                }
+            }
+        }
+
+        List<Ticket__c> ticketsToUpdate = new List<Ticket__c>();
+        ticketsToUpdate.addAll(getTicketsToRelease(tripsToUnbook));
+        ticketsToUpdate.addAll(getTicketsToReserve(tripsToBook));
+
+        if (!ticketsToUpdate.isEmpty()) {
+            update ticketsToUpdate;
+        }
+    }
+
+    private static List<Ticket__c> getTicketsToRelease(List<Trip__c> tripsToUnbook) {
+        if (tripsToUnbook.isEmpty()) {
+            return new List<Ticket__c>();
+        }
+
+        Set<Id> flightIds = new Set<Id>();
+        Set<Id> contactIds = new Set<Id>();
+        for (Trip__c t : tripsToUnbook) {
+            flightIds.add(t.Flight__c);
+            contactIds.add(t.Contact__c);
+        }
+
+        List<Ticket__c> bookedTickets = [SELECT Id, Flight__c, Contact__c, Trip__c
+                                         FROM Ticket__c
+                                         WHERE Flight__c IN :flightIds
+                                           AND Contact__c IN :contactIds];
+
+        Map<String, Ticket__c> ticketCompositeMap = new Map<String, Ticket__c>();
+        for (Ticket__c ticket : bookedTickets) {
+            ticketCompositeMap.put(ticket.Flight__c + '_' + ticket.Contact__c, ticket);
+        }
+
+        List<Ticket__c> toRelease = new List<Ticket__c>();
+        for (Trip__c t : tripsToUnbook) {
+            String key = t.Flight__c + '_' + t.Contact__c; 
+
+            if (ticketCompositeMap.containsKey(key)) {
+                Ticket__c tick = ticketCompositeMap.get(key);
+                tick.Contact__c = null;
+                tick.Trip__c = null; 
+                toRelease.add(tick);
+                ticketCompositeMap.remove(key);
+            }
+        }
+        return toRelease;
+    }
+
+    private static List<Ticket__c> getTicketsToReserve(List<Trip__c> tripsToBook) {
+        if (tripsToBook.isEmpty()) {
+            return new List<Ticket__c>();
+        }
+
+        Set<Id> flightIds = new Set<Id>();
+        for (Trip__c t : tripsToBook) {
+            flightIds.add(t.Flight__c);
+        }
+
+        List<Ticket__c> availableTickets = [SELECT Id, Flight__c, Contact__c, Trip__c
+                                            FROM Ticket__c
+                                            WHERE Flight__c IN :flightIds
+                                              AND Contact__c = null
+                                            ORDER BY CreatedDate ASC];
+
+        Map<Id, List<Ticket__c>> flightTicketsMap = new Map<Id, List<Ticket__c>>();
+        for (Ticket__c ticket : availableTickets) {
+            if (!flightTicketsMap.containsKey(ticket.Flight__c)) {
+                flightTicketsMap.put(ticket.Flight__c, new List<Ticket__c>());
+            }
+            flightTicketsMap.get(ticket.Flight__c).add(ticket);
+        }
+
+        List<Trip__c> tripsWithErrors = new List<Trip__c>();
+        List<Ticket__c> toReserve = new List<Ticket__c>();
+        
+        for (Trip__c t : tripsToBook) {
+            List<Ticket__c> available = flightTicketsMap.get(t.Flight__c);
+
+            if (available != null && !available.isEmpty()) {
+                Ticket__c ticket = available.remove(0);
+                ticket.Contact__c = t.Contact__c;
+                ticket.Trip__c = t.Id; 
+                toReserve.add(ticket);
+            } else {
+                t.addError('No available tickets for the selected flight.');
+            }
+        }
+        
+        return toReserve;
+    }
+}

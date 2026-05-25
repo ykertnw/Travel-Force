@@ -1,0 +1,53 @@
+public with sharing class TicketIntegrationService {
+
+    @future(callout=true)
+    public static void sendTicketsToExternalApi(Set<Id> ticketIds) {
+        List<Ticket__c> tickets = fetchTickets(ticketIds);
+        if (tickets.isEmpty()) {
+            return;
+        }
+
+        String jsonBody = JSON.serialize(tickets);
+        HttpRequest request = buildHttpRequest(jsonBody);
+        
+        logRequest(request);
+
+        sendRequest(request);
+    }
+
+    private static List<Ticket__c> fetchTickets(Set<Id> ticketIds) {
+        return [SELECT Id, Name, Flight__r.Name, Contact__r.Name, Contact__r.Email
+                FROM Ticket__c
+                WHERE Id IN :ticketIds];
+    }
+
+    private static HttpRequest buildHttpRequest(String jsonBody) {
+        HttpRequest request = new HttpRequest();
+        request.setEndpoint('https://private-1ce70-testassign.apiary-mock.com/'); 
+        request.setMethod('POST');
+        request.setHeader('Content-Type', 'application/json');
+        request.setBody(jsonBody);
+        return request;
+    }
+
+    private static void logRequest(HttpRequest request) {
+        System.debug('--- Sending HTTP Request ---');
+        System.debug('Endpoint: ' + request.getEndpoint());
+        System.debug('Method: ' + request.getMethod());
+        System.debug('Body: ' + request.getBody());
+    }
+
+    private static void sendRequest(HttpRequest request) {
+        Http http = new Http();
+        try {
+            HttpResponse response = http.send(request);
+            if (response.getStatusCode() != 200 && response.getStatusCode() != 201) {
+                System.debug('Error during tickets. Status: ' + response.getStatus() + ' Body: ' + response.getBody());
+            } else {
+                System.debug('Success! Ticket integration completed.');
+            }
+        } catch (Exception e) {
+            System.debug('Exception during ticket integration: ' + e.getMessage());
+        }
+    }
+}

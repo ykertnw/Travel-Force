@@ -1,0 +1,16 @@
+<template>
+    <lightning-card title="Available Flights" icon-name="custom:custom20">
+        <template if:true={flights}>
+            <lightning-datatable
+                key-field="Id"
+                data={flights}
+                columns={columns}
+                onrowaction={handleRowAction}
+                hide-checkbox-column>
+            </lightning-datatable>
+        </template>
+        <template if:true={error}>
+            <div class="slds-text-color_error slds-p-around_medium">{error}</div>
+        </template>
+    </lightning-card>
+</template>

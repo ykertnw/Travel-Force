@@ -1,0 +1,30 @@
+@isTest
+private class TripTriggerTest {
+    @isTest
+    static void testTripTriggerBulkOperations() {
+        Contact testContact = new Contact(FirstName = 'Test', LastName = 'User');
+        insert testContact;
+        
+        List<Trip__c> tripsToInsert = new List<Trip__c>();
+        for (Integer i = 0; i < 50; i++) {
+            tripsToInsert.add(new Trip__c(
+                Contact__c = testContact.Id,
+                PrefferedTripStart__c = Date.today()
+            ));
+        }
+        
+        Test.startTest();
+        insert tripsToInsert;
+        System.assertEquals(50, [SELECT COUNT() FROM Trip__c], 'All 50 Trips should be created');
+        
+        for (Trip__c t : tripsToInsert) {
+            t.PrefferedTripStart__c = Date.today().addDays(1);
+        }
+        update tripsToInsert;
+        
+        delete tripsToInsert;
+        Test.stopTest();
+        
+        System.assertEquals(0, [SELECT COUNT() FROM Trip__c], 'All Trips should be deleted');
+    }
+}

@@ -1,0 +1,22 @@
+trigger TripTrigger on Trip__c (before insert, before update, after insert, after update, before delete) {
+    if (Trigger.isBefore) {
+        if (Trigger.isInsert) {
+            TripHandler.onBeforeInsert(Trigger.new);
+        }
+        if (Trigger.isUpdate) {
+            TripHandler.onBeforeUpdate(Trigger.new, Trigger.oldMap);
+        }
+        if (Trigger.isDelete) {
+            TripHandler.onBeforeDelete(Trigger.old);
+        }
+    }
+
+    if (Trigger.isAfter) {
+        if (Trigger.isInsert) {
+            TripHandler.onAfterInsert(Trigger.new);
+        }
+        if (Trigger.isUpdate) {
+            TripHandler.onAfterUpdate(Trigger.new, Trigger.oldMap);
+        }
+    }
+}
